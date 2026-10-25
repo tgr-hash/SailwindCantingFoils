@@ -1,8 +1,8 @@
 # SailwindCantingFoils
 
-A BepInEx 5 visual prototype for Sailwind. It discovers the Al'Ankh menu decoration through Sailwind's serialized `StartMenu.decoAlAnkh` reference, logs that object's runtime hierarchy once, and parents temporary Unity cube geometry under it. It does not modify the dhow model, add physics, add controls, or install itself into the game.
+A BepInEx 5 visual prototype for Sailwind. The previous target, `StartMenu.decoAlAnkh`, was confirmed by the runtime log to be an inactive Al'Ankh scenery group containing an obelisk, palms, shrubs, and menu text—not the dhow. This build instead searches the active main-menu scene for Sailwind's `BoatRefs` component, resolves its `boatModel` transform, and creates two large visibility cubes outside the model's renderer bounds. It does not change the camera, add physics, or modify the original boat model.
 
-Menu discovery lives in `MenuPreviewDhowDiscovery.cs`. The separate `FoilSystem` geometry builder accepts any ship `Transform`, so later gameplay and shipyard discovery can reuse it. If the menu object is unavailable, the discovery coroutine waits quietly and does not affect the game.
+Menu discovery lives in `MenuPreviewDhowDiscovery.cs`. It gates on Sailwind's `StartMenu.menuEnabled`, matches a dhow `BoatRefs` in the same scene, and attaches beneath `BoatRefs.boatModel` rather than assuming the component's GameObject is the model. It chooses a renderer layer included by the active menu camera. The separate `FoilSystem` visibility-test builder accepts any model `Transform` so it can be reused for later ship targets. Missing or ambiguous candidates are handled without creating objects.
 
 ## Prerequisites
 
@@ -37,8 +37,8 @@ This is a separate build output folder, not the game plugins folder.
 1. Build the DLL using the command above.
 2. In your Sailwind installation, open `BepInEx\plugins`. Create a folder named `SailwindCantingFoils` if it does not exist.
 3. Copy `build\manual-test\SailwindCantingFoils.dll` into that folder.
-4. Start Sailwind through Steam and then exit the game.
-5. Open `BepInEx\LogOutput.log` in the game folder. Search for `Found StartMenu.decoAlAnkh candidate` and `Created port and starboard foil test geometry`. The first message includes the observed hierarchy and component names. Confirm the candidate is the visible menu dhow and the orange arms follow its transform.
+4. Start Sailwind through Steam and leave it at the main menu long enough to inspect the cubes. Exit when you are done.
+5. Open `BepInEx\LogOutput.log` in the game folder. Search for `Found main-menu dhow BoatRefs`, `Created magenta and yellow visibility cubes`, and the two `VisibilityCube_... diagnostics` lines. Confirm the hierarchy is the visible menu dhow; each diagnostic reports world/local position, local scale, active state, layer, camera layer-mask inclusion, and renderer enabled state. Confirm both cubes appear beside the dhow and follow its transform.
 
 For a later rebuild, close the game, build again, and copy the new DLL over the manually installed one. This project never copies files into the game installation automatically.
 
@@ -47,8 +47,8 @@ For a later rebuild, close the game, build again, and copy the new DLL over the 
 - **`BepInEx.dll` or game assembly not found:** confirm `$SailwindDir` points to the folder containing `Sailwind.exe`, and that BepInEx 5 is installed there.
 - **NuGet restore fails:** the .NET SDK needs the `NETStandard.Library` reference package for `netstandard2.0`. Check network access to NuGet, or restore the project on a machine with that package available before building offline.
 - **Plugin is not listed in the log:** verify the DLL is inside `BepInEx\plugins\SailwindCantingFoils`, start the BepInEx-enabled Sailwind executable, and check that the install uses BepInEx 5 rather than another loader.
-- **No preview candidate appears:** start from Sailwind's main menu and check `LogOutput.log` for BepInEx errors. The target reference exists on the main-menu `StartMenu` component.
-- **The geometry is on the wrong object or at the wrong angle:** use the logged hierarchy to inspect the selected reference, then adjust `ArmLength`, `OutboardOffset`, `ArmHeight`, `ArmCantDegrees`, and the size fields in `FoilSystem.cs`.
+- **No dhow candidate appears:** ensure the main menu is open. The plugin waits for an active `BoatRefs` with a `boatModel` in the same scene as `StartMenu`; check the BepInEx log for candidate or ambiguity messages.
+- **The cubes are misplaced or too small:** adjust `CubeSize` and `SideClearance` in `FoilSystem.cs`. Their initial positions are computed from the model's active renderer bounds along its local right axis.
 - **Plugin load error:** inspect the first relevant exception in `BepInEx\LogOutput.log`; ensure the project was built against the same Sailwind install used for testing.
 
 ## References
