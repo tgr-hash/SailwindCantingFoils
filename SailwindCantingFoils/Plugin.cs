@@ -12,6 +12,7 @@ namespace SailwindCantingFoils
         private void Awake()
         {
             Logger.LogInfo("SailwindCantingFoils loaded successfully");
+            StartCoroutine(MenuPreviewDhowDiscovery.Watch(Logger));
         }
     }
 }
