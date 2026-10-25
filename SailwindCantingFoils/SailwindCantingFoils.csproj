@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net46</TargetFramework>
+    <TargetFramework>netstandard2.0</TargetFramework>
     <AssemblyName>SailwindCantingFoils</AssemblyName>
     <RootNamespace>SailwindCantingFoils</RootNamespace>
     <LangVersion>latest</LangVersion>
@@ -19,6 +19,7 @@
     <Error Condition="!Exists('$(SailwindDir)\BepInEx\core\BepInEx.dll')" Text="BepInEx.dll was not found under '$(SailwindDir)\BepInEx\core'. Install/configure BepInEx 5 or set SailwindDir to the correct game folder." />
     <Error Condition="!Exists('$(SailwindDir)\Sailwind_Data\Managed\UnityEngine.dll')" Text="UnityEngine.dll was not found under '$(SailwindDir)\Sailwind_Data\Managed'. Verify SailwindDir points to the game folder." />
     <Error Condition="!Exists('$(SailwindDir)\Sailwind_Data\Managed\Assembly-CSharp.dll')" Text="Assembly-CSharp.dll was not found under '$(SailwindDir)\Sailwind_Data\Managed'. Verify SailwindDir points to the game folder." />
+    <Error Condition="!Exists('$(SailwindDir)\Sailwind_Data\Managed\UnityEngine.CoreModule.dll')" Text="UnityEngine.CoreModule.dll was not found under the Sailwind Managed folder." />
   </Target>
 
   <ItemGroup>
@@ -32,6 +33,10 @@
     </Reference>
     <Reference Include="Assembly-CSharp">
       <HintPath>$(SailwindDir)\Sailwind_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(SailwindDir)\Sailwind_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

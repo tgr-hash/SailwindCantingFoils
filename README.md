@@ -7,9 +7,10 @@ A minimal BepInEx 5 plugin foundation for Sailwind. Phase 1 only writes a startu
 - Windows and a Sailwind installation using Unity Mono.
 - BepInEx 5 installed in that Sailwind folder. BepInEx 5.4.23.5 was present when this project was prepared.
 - The game assemblies from that installation: `Sailwind_Data\Managed\UnityEngine.dll` and `Assembly-CSharp.dll`, plus `BepInEx\core\BepInEx.dll`.
-- .NET SDK with .NET Framework 4.6 targeting/reference assemblies available. The checked Sailwind install reports Unity 2019.1.10 and CLR 4, contains `mscorlib.dll`, and does not contain `netstandard.dll`; this project therefore targets `net46`, following BepInEx's target-framework guidance for this type of Unity Mono game.
+- .NET SDK. The checked Sailwind install reports Unity 2019.1 and includes `Sailwind_Data\Managed\netstandard.dll`; BepInEx's target-framework guidance selects `netstandard2.0` for games on Unity 2021.1 or older when this assembly is present. The project therefore targets `netstandard2.0`. The .NET 10 SDK is the build tool; it does not change the plugin's target framework.
 
 The game and BepInEx assemblies are referenced in place and are not copied into this repository or output. Do not commit those files.
+The project also references Sailwind's `UnityEngine.CoreModule.dll`, which contains the `MonoBehaviour` type inherited by BepInEx's plugin base class.
 
 ## Build
 
@@ -41,7 +42,7 @@ For a later rebuild, close the game, build again, and copy the new DLL over the 
 ## Troubleshooting
 
 - **`BepInEx.dll` or game assembly not found:** confirm `$SailwindDir` points to the folder containing `Sailwind.exe`, and that BepInEx 5 is installed there.
-- **Missing .NET Framework reference assemblies during build:** install the .NET Framework 4.6 developer/targeting pack or use a Visual Studio installation that includes .NET Framework targeting packs. The .NET 10 runtime alone is not the project's target framework.
+- **NuGet restore fails:** the .NET SDK needs the `NETStandard.Library` reference package for `netstandard2.0`. Check network access to NuGet, or restore the project on a machine with that package available before building offline.
 - **Plugin is not listed in the log:** verify the DLL is inside `BepInEx\plugins\SailwindCantingFoils`, start the BepInEx-enabled Sailwind executable, and check that the install uses BepInEx 5 rather than another loader.
 - **Plugin load error:** inspect the first relevant exception in `BepInEx\LogOutput.log`; ensure the project was built against the same Sailwind install used for testing.
 

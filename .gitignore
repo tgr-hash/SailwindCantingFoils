@@ -3,6 +3,8 @@ bin/
 obj/
 build/
 .dotnet-home/
+.local-appdata/
+.nuget-packages/
 *.user
 *.suo
 
