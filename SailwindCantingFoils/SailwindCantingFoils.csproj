@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net46</TargetFramework>
+    <AssemblyName>SailwindCantingFoils</AssemblyName>
+    <RootNamespace>SailwindCantingFoils</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <OutputPath>$(MSBuildThisFileDirectory)..\build\manual-test\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <SailwindDir Condition="'$(SailwindDir)' == ''">$(SAILWIND_DIR)</SailwindDir>
+  </PropertyGroup>
+
+  <Target Name="RequireSailwindReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="'$(SailwindDir)' == ''" Text="Set SailwindDir to the Sailwind install folder, for example: dotnet build -p:SailwindDir=&quot;C:\Program Files (x86)\Steam\steamapps\common\Sailwind&quot;" />
+    <Error Condition="!Exists('$(SailwindDir)\BepInEx\core\BepInEx.dll')" Text="BepInEx.dll was not found under '$(SailwindDir)\BepInEx\core'. Install/configure BepInEx 5 or set SailwindDir to the correct game folder." />
+    <Error Condition="!Exists('$(SailwindDir)\Sailwind_Data\Managed\UnityEngine.dll')" Text="UnityEngine.dll was not found under '$(SailwindDir)\Sailwind_Data\Managed'. Verify SailwindDir points to the game folder." />
+    <Error Condition="!Exists('$(SailwindDir)\Sailwind_Data\Managed\Assembly-CSharp.dll')" Text="Assembly-CSharp.dll was not found under '$(SailwindDir)\Sailwind_Data\Managed'. Verify SailwindDir points to the game folder." />
+  </Target>
+
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>$(SailwindDir)\BepInEx\core\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(SailwindDir)\Sailwind_Data\Managed\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(SailwindDir)\Sailwind_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

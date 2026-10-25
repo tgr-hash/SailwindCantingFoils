@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+build/
+.dotnet-home/
+*.user
+*.suo
+
+# Local game installation and reference configuration
+Directory.Build.props
+Directory.Build.targets
+*.local.props
+*.local.targets
+/Sailwind/
+/Sailwind_Data/
+/BepInEx/
+/MonoBleedingEdge/
+/Sailwind.exe
+/UnityPlayer.dll
+/winhttp.dll
+/doorstop_config.ini
+/.doorstop_version
