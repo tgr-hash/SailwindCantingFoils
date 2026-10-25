@@ -37,6 +37,39 @@ namespace SailwindCantingFoils
             return null;
         }
 
+        /// <summary>
+        /// Gets the union bounds for active, enabled model renderers whose
+        /// layers are included by this camera. Frustum intersection is checked
+        /// by discovery separately.
+        /// </summary>
+        internal static bool TryGetCameraRenderedModelBounds(Transform model, Camera camera, out Bounds bounds)
+        {
+            bounds = new Bounds();
+            if (model == null || camera == null)
+                return false;
+
+            bool found = false;
+            Renderer[] renderers = model.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer renderer = renderers[i];
+                if (renderer == null || !renderer.enabled || !renderer.gameObject.activeInHierarchy ||
+                    (camera.cullingMask & (1 << renderer.gameObject.layer)) == 0)
+                    continue;
+
+                if (!found)
+                {
+                    bounds = renderer.bounds;
+                    found = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(renderer.bounds);
+                }
+            }
+            return found;
+        }
+
         internal static bool TryCreateVisibilityCubes(
             Transform model,
             Camera camera,

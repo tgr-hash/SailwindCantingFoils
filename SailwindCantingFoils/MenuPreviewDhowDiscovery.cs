@@ -1,6 +1,5 @@
 using System.Collections;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Text;
 using BepInEx.Logging;
 using UnityEngine;
@@ -8,100 +7,94 @@ using UnityEngine;
 namespace SailwindCantingFoils
 {
     /// <summary>
-    /// Finds Sailwind's actual dhow boat component in the main-menu scene, then
-    /// uses BoatRefs.boatModel as the renderable model root rather than assuming
-    /// the component's GameObject is itself the visible ship model.
+    /// Finds the unique active BoatRefs model whose renderer bounds intersect
+    /// the menu camera frustum. Layer-mask membership alone is not visibility.
     /// </summary>
     internal static class MenuPreviewDhowDiscovery
     {
-        private const string BoatModelFieldName = "boatModel";
         private const float RetryIntervalSeconds = 0.5f;
 
         internal static IEnumerator Watch(ManualLogSource logger)
         {
-            FieldInfo boatModelField = typeof(BoatRefs).GetField(
-                BoatModelFieldName,
-                BindingFlags.Instance | BindingFlags.NonPublic);
-
-            if (boatModelField == null)
-            {
-                logger.LogError("Could not resolve BoatRefs.boatModel; visibility test remains inactive.");
-                yield break;
-            }
-
             var wait = new WaitForSeconds(RetryIntervalSeconds);
-            bool waitingMessageLogged = false;
-            bool ambiguityMessageLogged = false;
-            bool cameraMessageLogged = false;
-            bool layerMessageLogged = false;
-            int lastReportedInstanceId = 0;
+            string lastInventorySignature = null;
+            string lastAmbiguitySignature = null;
+            string lastNoCandidateSignature = null;
+            bool cameraWarningLogged = false;
+
             while (true)
             {
                 StartMenu menu = Object.FindObjectOfType(typeof(StartMenu)) as StartMenu;
                 if (menu != null && StartMenu.menuEnabled)
                 {
-                    List<BoatRefs> dhowCandidates = FindMenuDhowCandidates(menu, boatModelField);
-                    if (dhowCandidates.Count == 1)
+                    Camera camera = FindMenuCamera(menu);
+                    List<BoatRefs> inventory = FindLoadedBoatRefs();
+                    string signature = BuildSituationSignature(inventory, menu, camera);
+                    if (signature != lastInventorySignature)
                     {
-                        BoatRefs boat = dhowCandidates[0];
-                        Transform model = boatModelField.GetValue(boat) as Transform;
-                        Camera menuCamera = FindMenuCamera(menu);
-                        Renderer visibleRenderer = FoilSystem.FindCameraRenderedModelRenderer(model, menuCamera);
+                        lastInventorySignature = signature;
+                        logger.LogInfo("Main-menu BoatRefs candidate diagnostics (menu path='" +
+                            GetHierarchyPath(menu.transform) + "', camera='" +
+                            (camera != null ? GetHierarchyPath(camera.transform) : "<none>") + "'):\n" +
+                            DescribeCandidates(inventory, menu, camera));
+                    }
 
-                        if (model != null && menuCamera != null && visibleRenderer != null)
+                    if (camera == null)
+                    {
+                        if (!cameraWarningLogged)
                         {
-                            waitingMessageLogged = false;
-                            ambiguityMessageLogged = false;
-                            cameraMessageLogged = false;
-                            layerMessageLogged = false;
-
-                            int instanceId = model.GetInstanceID();
-                            if (instanceId != lastReportedInstanceId)
+                            logger.LogWarning("StartMenu is active, but no enabled menu camera is available; dhow discovery will retry.");
+                            cameraWarningLogged = true;
+                        }
+                    }
+                    else
+                    {
+                        cameraWarningLogged = false;
+                        List<BoatRefs> inViewCandidates = FindFrustumCandidates(inventory, menu, camera);
+                        if (inViewCandidates.Count == 1)
+                        {
+                            BoatRefs boat = inViewCandidates[0];
+                            Transform model = boat.boatModel;
+                            Renderer renderer = FoilSystem.FindCameraRenderedModelRenderer(model, camera);
+                            if (renderer != null)
                             {
-                                lastReportedInstanceId = instanceId;
-                                logger.LogInfo(
-                                    "Found main-menu dhow BoatRefs '" + boat.gameObject.name +
-                                    "' with boatModel '" + model.name + "'; menu camera '" +
-                                    menuCamera.name + "' renders model layer " +
-                                    visibleRenderer.gameObject.layer + " (" +
-                                    LayerMask.LayerToName(visibleRenderer.gameObject.layer) +
-                                    "). Runtime boatModel hierarchy follows:\n" +
-                                    DescribeHierarchy(model) +
-                                    "Visible model bounds: center=" + visibleRenderer.bounds.center +
-                                    ", size=" + visibleRenderer.bounds.size);
-                            }
+                                logger.LogInfo("Selected unique active main-menu boat candidate at '" +
+                                    GetHierarchyPath(boat.transform) + "'; visible model='" +
+                                    GetHierarchyPath(model) + "', renderer bounds=" + renderer.bounds +
+                                    ", camera distance=" + Vector3.Distance(camera.transform.position, renderer.bounds.center) +
+                                    ". It is the only active BoatRefs candidate in the menu scene whose camera-renderable model bounds intersect the menu camera frustum.");
 
-                            bool available = FoilSystem.TryCreateVisibilityCubes(
-                                model,
-                                menuCamera,
-                                visibleRenderer,
-                                logger,
-                                out bool created);
-                            if (available && created)
-                                logger.LogInfo("Created magenta and yellow visibility cubes under BoatRefs.boatModel.");
+                                bool available = FoilSystem.TryCreateVisibilityCubes(
+                                    model, camera, renderer, logger, out bool created);
+                                if (available)
+                                {
+                                    if (created)
+                                        logger.LogInfo("Created magenta and yellow visibility cubes under the uniquely selected menu boat model.");
+                                    else
+                                        logger.LogInfo("Visibility test geometry already exists under the selected model; not creating duplicates.");
+                                    yield break;
+                                }
+                            }
                         }
-                        else if (menuCamera == null && !cameraMessageLogged)
+                        else if (inViewCandidates.Count > 1)
                         {
-                            cameraMessageLogged = true;
-                            logger.LogWarning("Dhow candidate found, but no active menu camera is available yet.");
+                            string ambiguity = BuildCandidateIdSignature(inViewCandidates);
+                            if (ambiguity != lastAmbiguitySignature)
+                            {
+                                lastAmbiguitySignature = ambiguity;
+                                logger.LogWarning("Multiple active BoatRefs model bounds intersect the menu camera frustum; no cubes created. Candidate diagnostics above show hierarchy, parent path, renderer bounds, and camera distance. Selection remains ambiguous; discovery will retry without repeating this warning unless the candidate set changes.");
+                            }
                         }
-                        else if (model != null && visibleRenderer == null && !layerMessageLogged)
+                        else
                         {
-                            layerMessageLogged = true;
-                            logger.LogWarning("No active dhow model renderer uses a layer included by the menu camera; visibility cubes were not created.");
+                            lastAmbiguitySignature = null;
+                            string noCandidate = signature + "|camera=" + camera.GetInstanceID();
+                            if (noCandidate != lastNoCandidateSignature)
+                            {
+                                lastNoCandidateSignature = noCandidate;
+                                logger.LogInfo("No active dhow BoatRefs model bounds currently intersect the menu camera frustum; discovery will retry.");
+                            }
                         }
-                    }
-                    else if (dhowCandidates.Count > 1 && !ambiguityMessageLogged)
-                    {
-                        ambiguityMessageLogged = true;
-                        logger.LogWarning(
-                            "Multiple dhow BoatRefs candidates exist in the main-menu scene; no visibility cubes were created: " +
-                            DescribeCandidates(dhowCandidates, boatModelField));
-                    }
-                    else if (dhowCandidates.Count == 0 && !waitingMessageLogged)
-                    {
-                        waitingMessageLogged = true;
-                        logger.LogInfo("Main menu is active; waiting for a dhow BoatRefs.boatModel with a rendered mesh.");
                     }
                 }
 
@@ -109,25 +102,36 @@ namespace SailwindCantingFoils
             }
         }
 
-        private static List<BoatRefs> FindMenuDhowCandidates(StartMenu menu, FieldInfo boatModelField)
+        private static List<BoatRefs> FindLoadedBoatRefs()
         {
             var candidates = new List<BoatRefs>();
-            BoatRefs[] boats = Object.FindObjectsOfType<BoatRefs>();
+            BoatRefs[] boats = Resources.FindObjectsOfTypeAll<BoatRefs>();
             for (int i = 0; i < boats.Length; i++)
             {
                 BoatRefs boat = boats[i];
-                if (boat == null || !boat.gameObject.activeInHierarchy ||
-                    boat.gameObject.scene.handle != menu.gameObject.scene.handle)
+                if (boat == null || boat.gameObject.scene.handle == 0)
+                    continue;
+                candidates.Add(boat);
+            }
+            return candidates;
+        }
+
+        private static List<BoatRefs> FindFrustumCandidates(List<BoatRefs> inventory, StartMenu menu, Camera camera)
+        {
+            var candidates = new List<BoatRefs>();
+            Plane[] frustum = GeometryUtility.CalculateFrustumPlanes(camera);
+            for (int i = 0; i < inventory.Count; i++)
+            {
+                BoatRefs boat = inventory[i];
+                if (boat == null || !boat.gameObject.activeInHierarchy || boat.boatModel == null ||
+                    !boat.boatModel.gameObject.activeInHierarchy ||
+                    boat.gameObject.scene.handle != menu.gameObject.scene.handle ||
+                    !IsDhowCandidate(boat))
                     continue;
 
-                Transform model = boatModelField.GetValue(boat) as Transform;
-                if (model == null || !model.gameObject.activeInHierarchy)
-                    continue;
-
-                bool nameIdentifiesDhow =
-                    boat.gameObject.name.IndexOf("dhow", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    model.name.IndexOf("dhow", System.StringComparison.OrdinalIgnoreCase) >= 0;
-                if (nameIdentifiesDhow)
+                Bounds bounds = new Bounds();
+                if (FoilSystem.TryGetCameraRenderedModelBounds(boat.boatModel, camera, out bounds) &&
+                    GeometryUtility.TestPlanesAABB(frustum, bounds))
                     candidates.Add(boat);
             }
             return candidates;
@@ -135,9 +139,9 @@ namespace SailwindCantingFoils
 
         private static Camera FindMenuCamera(StartMenu menu)
         {
-            Camera mainCamera = Camera.main;
-            if (mainCamera != null && mainCamera.isActiveAndEnabled)
-                return mainCamera;
+            Camera main = Camera.main;
+            if (main != null && main.isActiveAndEnabled)
+                return main;
 
             Camera[] cameras = Camera.allCameras;
             for (int i = 0; i < cameras.Length; i++)
@@ -150,53 +154,102 @@ namespace SailwindCantingFoils
             return null;
         }
 
-        private static string DescribeCandidates(List<BoatRefs> candidates, FieldInfo boatModelField)
+        private static string DescribeCandidates(List<BoatRefs> inventory, StartMenu menu, Camera camera)
         {
-            var description = new StringBuilder();
+            if (inventory.Count == 0)
+                return "<no BoatRefs objects found in loaded scenes>";
+
+            var result = new StringBuilder();
+            Plane[] frustum = camera != null ? GeometryUtility.CalculateFrustumPlanes(camera) : null;
+            for (int i = 0; i < inventory.Count; i++)
+            {
+                BoatRefs boat = inventory[i];
+                Transform model = boat != null ? boat.boatModel : null;
+                if (i > 0)
+                    result.AppendLine();
+                result.Append("- BoatRefs path='").Append(boat != null ? GetHierarchyPath(boat.transform) : "<destroyed>")
+                    .Append("', parent='").Append(boat != null && boat.transform.parent != null ? GetHierarchyPath(boat.transform.parent) : "<none>")
+                    .Append("', scene='").Append(boat != null ? boat.gameObject.scene.name : "<none>")
+                    .Append("', active=").Append(boat != null && boat.gameObject.activeInHierarchy)
+                    .Append(", model='").Append(model != null ? GetHierarchyPath(model) : "<null>")
+                    .Append("', modelActive=").Append(model != null && model.gameObject.activeInHierarchy);
+
+                Bounds bounds = new Bounds();
+                bool hasBounds = camera != null && model != null &&
+                    FoilSystem.TryGetCameraRenderedModelBounds(model, camera, out bounds);
+                if (hasBounds)
+                {
+                    bool inFrustum = GeometryUtility.TestPlanesAABB(frustum, bounds);
+                    result.Append(", rendererBounds=").Append(bounds)
+                        .Append(", cameraDistance=").Append(Vector3.Distance(camera.transform.position, bounds.center).ToString("F2"))
+                        .Append(", intersectsCameraFrustum=").Append(inFrustum);
+                }
+                else
+                {
+                    result.Append(", cameraRendererBounds=<none>");
+                }
+                result.Append(", sameSceneAsStartMenu=")
+                    .Append(menu != null && boat != null && boat.gameObject.scene.handle == menu.gameObject.scene.handle);
+            }
+            return result.ToString();
+        }
+
+        private static string BuildSituationSignature(List<BoatRefs> inventory, StartMenu menu, Camera camera)
+        {
+            var signature = new StringBuilder();
+            signature.Append(menu.GetInstanceID()).Append('|').Append(camera != null ? camera.GetInstanceID() : 0);
+            for (int i = 0; i < inventory.Count; i++)
+            {
+                BoatRefs boat = inventory[i];
+                if (boat == null)
+                    continue;
+                signature.Append('|').Append(boat.GetInstanceID()).Append(':').Append(boat.gameObject.activeInHierarchy);
+                Transform model = boat.boatModel;
+                signature.Append(':').Append(model != null ? model.GetInstanceID() : 0)
+                    .Append(':').Append(model != null && model.gameObject.activeInHierarchy);
+                if (camera != null && model != null)
+                {
+                    Bounds bounds;
+                    bool hasBounds = FoilSystem.TryGetCameraRenderedModelBounds(model, camera, out bounds);
+                    signature.Append(':').Append(hasBounds);
+                    if (hasBounds)
+                        signature.Append(':').Append(GeometryUtility.TestPlanesAABB(GeometryUtility.CalculateFrustumPlanes(camera), bounds));
+                }
+            }
+            return signature.ToString();
+        }
+
+        private static string BuildCandidateIdSignature(List<BoatRefs> candidates)
+        {
+            var signature = new StringBuilder();
             for (int i = 0; i < candidates.Count; i++)
-            {
-                Transform model = boatModelField.GetValue(candidates[i]) as Transform;
-                if (i > 0)
-                    description.Append("; ");
-                description.Append(candidates[i].gameObject.name)
-                    .Append(" -> ")
-                    .Append(model != null ? model.name : "<no boatModel>");
-            }
-            return description.ToString();
+                signature.Append(candidates[i].GetInstanceID()).Append('|');
+            return signature.ToString();
         }
 
-        private static string DescribeHierarchy(Transform root)
+        // Sailwind's loaded scene inventory identifies vessel families in the
+        // actual runtime hierarchy names (for example "BOAT dhow medium").
+        // Keep all size variants eligible; frustum visibility must reduce the
+        // dhow family to exactly one candidate before anything is attached.
+        private static bool IsDhowCandidate(BoatRefs boat)
         {
-            var description = new StringBuilder();
-            int remainingNodes = 100;
-            AppendHierarchy(root, 0, description, ref remainingNodes);
-            if (remainingNodes <= 0)
-                description.AppendLine("  ... hierarchy truncated at 100 objects");
-            return description.ToString();
+            return boat != null &&
+                (GetHierarchyPath(boat.transform).IndexOf("dhow", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 (boat.boatModel != null && GetHierarchyPath(boat.boatModel).IndexOf("dhow", System.StringComparison.OrdinalIgnoreCase) >= 0));
         }
 
-        private static void AppendHierarchy(
-            Transform current,
-            int depth,
-            StringBuilder description,
-            ref int remainingNodes)
+        private static string GetHierarchyPath(Transform transform)
         {
-            if (current == null || remainingNodes <= 0 || depth > 4)
-                return;
-
-            remainingNodes--;
-            description.Append(' ', depth * 2).Append(current.name).Append(" [");
-            Component[] components = current.GetComponents<Component>();
-            for (int i = 0; i < components.Length; i++)
+            if (transform == null)
+                return "<null>";
+            var path = new StringBuilder(transform.name);
+            Transform parent = transform.parent;
+            while (parent != null)
             {
-                if (i > 0)
-                    description.Append(", ");
-                description.Append(components[i] != null ? components[i].GetType().Name : "MissingComponent");
+                path.Insert(0, parent.name + "/");
+                parent = parent.parent;
             }
-            description.AppendLine("]");
-
-            for (int i = 0; i < current.childCount && remainingNodes > 0; i++)
-                AppendHierarchy(current.GetChild(i), depth + 1, description, ref remainingNodes);
+            return path.ToString();
         }
     }
 }
